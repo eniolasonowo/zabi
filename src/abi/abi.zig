@@ -152,7 +152,7 @@ pub const Function = struct {
         self: @This(),
         comptime T: type,
         allocator: Allocator,
-        encoded: []const u8,
+        encoded: []u8,
         options: DecodeOptions,
     ) DecodeErrors!AbiDecoded(T) {
         _ = self;

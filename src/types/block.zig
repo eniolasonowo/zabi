@@ -326,6 +326,9 @@ pub const BlobBlock = struct {
     uncles: ?[]const Hash = null,
     withdrawalsRoot: ?Hash = null,
     withdrawals: ?[]const Withdrawal = null,
+    requestsHash : ?Hash = null,
+    
+
 
     pub fn jsonParse(
         allocator: Allocator,
