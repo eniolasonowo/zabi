@@ -295,9 +295,6 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
                 const as_number = std.mem.readInt(u256, @ptrCast(slice), options.bytes_endian);
                 std.mem.writeInt(AsInt, &result, @truncate(as_number), options.bytes_endian);
 
-
-                std.debug.print("Result: {any} \n", .{result});
-
                 return .{
                     .consumed = 32,
                     .data = result,
@@ -376,12 +373,12 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
                         var bytes_read: u16 = 64; //offset + length;
                         const offset: usize = @truncate(std.mem.readInt(u256, @ptrCast(encoded[position .. position + 32]), .big));
                         // const offset : usize = 96;
-                        std.debug.print("Offset: {any} \n", .{offset});
+                        // std.debug.print("Offset: {any} \n", .{offset});
 
-                        std.debug.print("Encoded: {any} \n", .{encoded});
+                        // std.debug.print("Encoded: {any} \n", .{encoded});
 
                         const length: usize = @truncate(std.mem.readInt(u256, @ptrCast(encoded[offset .. offset + 32]), .big));
-                        std.debug.print("Length: {any} \n", .{length});
+                        // std.debug.print("Length: {any} \n", .{length});
 
                         // const slice = encoded[offset + 32 .. offset + 32 + length];
                         // const slice = encoded[offset + 32 .. offset + 32 + (32 * length)];

@@ -126,6 +126,7 @@ pub const PublicChains = enum(usize) {
     zora = 7777777,
     sepolia = 11155111,
     op_sepolia = 11155420,
+    unichain = 130,
 };
 
 /// Wrapper around std.json.Parsed(T). Response for any of the RPC clients

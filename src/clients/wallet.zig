@@ -1058,6 +1058,23 @@ pub fn Wallet(comptime client_type: WalletClients) type {
 
             return self.sendSignedTransaction(prepared);
         }
+
+        pub fn signTransaction(
+            self : *WalletSelf,
+            tx : TransactionEnvelope,
+        ) ![]u8 {
+            const serialized = try serialize.serializeTransaction(self.allocator, tx, null);
+            defer self.allocator.free(serialized);
+
+            var hash_buffer: [Keccak256.digest_length]u8 = undefined;
+            Keccak256.hash(serialized, &hash_buffer, .{});
+
+            const signed = try self.signer.sign(hash_buffer);
+            const serialized_signed = try serialize.serializeTransaction(self.allocator, tx, signed);
+            return serialized_signed; 
+        }
+
+
         /// Signs and prepares an eip3074 authorization message.
         /// For more details on the implementation see [here](https://eips.ethereum.org/EIPS/eip-3074#specification).
         ///
