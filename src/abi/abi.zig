@@ -29,6 +29,7 @@ const ParseError = std.json.ParseError;
 const ParseFromValueError = std.json.ParseFromValueError;
 const ParseOptions = std.json.ParseOptions;
 const Value = std.json.Value;
+const Writer = std.Io.Writer;
 
 /// Solidity abi stat mutability definition of functions and constructors.
 pub const StateMutability = enum {
@@ -49,7 +50,7 @@ pub const Abitype = enum {
 };
 
 /// Set of possible errors when running `allocPrepare`
-pub const PrepareErrors = Allocator.Error || error{NoSpaceLeft};
+pub const PrepareErrors = Allocator.Error || error{NoSpaceLeft} || Writer.Error;
 
 /// Solidity Abi function representation.
 /// Reference: ["function"](https://docs.soliditylang.org/en/latest/abi-spec.html#json)
@@ -79,14 +80,14 @@ pub const Function = struct {
         self: @This(),
         allocator: Allocator,
         values: anytype,
-    ) (AbiEncoder.Errors || error{NoSpaceLeft})![]u8 {
+    ) (AbiEncoder.Errors || error{NoSpaceLeft} || Writer.Error)![]u8 {
         var buffer: [256]u8 = undefined;
 
-        var stream = std.io.fixedBufferStream(&buffer);
-        try self.prepare(stream.writer());
+        var stream = Writer.fixed(&buffer);
+        try self.prepare(&stream);
 
         var hashed: [Keccak256.digest_length]u8 = undefined;
-        Keccak256.hash(stream.getWritten(), &hashed, .{});
+        Keccak256.hash(stream.buffered(), &hashed, .{});
 
         var abi_encoder: AbiEncoder = .empty;
 
@@ -103,7 +104,7 @@ pub const Function = struct {
         comptime self: @This(),
         allocator: Allocator,
         values: AbiParametersToPrimative(self.inputs),
-    ) (AbiEncoder.Errors || error{NoSpaceLeft})![]u8 {
+    ) (AbiEncoder.Errors || error{NoSpaceLeft} || Writer.Error)![]u8 {
         return encoder.encodeAbiFunction(self, allocator, values);
     }
     /// Encode the struct signature based on the values provided.
@@ -159,13 +160,16 @@ pub const Function = struct {
         return decoder.decodeAbiFunctionOutputs(T, allocator, encoded, options);
     }
     /// Format the struct into a human readable string.
-    pub fn format(self: @This(), comptime layout: []const u8, opts: std.fmt.FormatOptions, writer: anytype) @TypeOf(writer).Error!void {
+    pub fn format(
+        self: @This(),
+        writer: anytype,
+    ) std.Io.Writer.Error!void {
         try writer.print("{s}", .{@tagName(self.type)});
         try writer.print(" {s}", .{self.name});
 
         try writer.print("(", .{});
         for (self.inputs, 0..) |input, i| {
-            try input.format(layout, opts, writer);
+            try input.format(writer);
             if (i != self.inputs.len - 1) try writer.print(", ", .{});
         }
         try writer.print(")", .{});
@@ -175,7 +179,7 @@ pub const Function = struct {
         if (self.outputs.len > 0) {
             try writer.print(" returns (", .{});
             for (self.outputs, 0..) |output, i| {
-                try output.format(layout, opts, writer);
+                try output.format(writer);
                 if (i != self.outputs.len - 1) try writer.print(", ", .{});
             }
             try writer.print(")", .{});
@@ -202,7 +206,7 @@ pub const Function = struct {
     /// Intended to use for hashing purposes.
     pub fn prepare(
         self: @This(),
-        writer: anytype,
+        writer: *Writer,
     ) PrepareErrors!void {
         try writer.print("{s}", .{self.name});
 
@@ -226,16 +230,14 @@ pub const Event = struct {
     /// Format the struct into a human readable string.
     pub fn format(
         self: @This(),
-        comptime layout: []const u8,
-        opts: std.fmt.FormatOptions,
         writer: anytype,
-    ) @TypeOf(writer).Error!void {
+    ) std.Io.Writer.Error!void {
         try writer.print("{s}", .{@tagName(self.type)});
         try writer.print(" {s}", .{self.name});
 
         try writer.print("(", .{});
         for (self.inputs, 0..) |input, i| {
-            try input.format(layout, opts, writer);
+            try input.format(writer);
             if (i != self.inputs.len - 1) try writer.print(",", .{});
         }
         try writer.print(")", .{});
@@ -244,11 +246,11 @@ pub const Event = struct {
     pub fn encode(self: @This()) PrepareErrors!Hash {
         var buffer: [256]u8 = undefined;
 
-        var stream = std.io.fixedBufferStream(&buffer);
-        try self.prepare(stream.writer());
+        var stream = Writer.fixed(&buffer);
+        try self.prepare(&stream);
 
         var hashed: [Keccak256.digest_length]u8 = undefined;
-        Keccak256.hash(stream.getWritten(), &hashed, .{});
+        Keccak256.hash(stream.buffered(), &hashed, .{});
 
         return hashed;
     }
@@ -318,16 +320,14 @@ pub const Error = struct {
     /// Format the struct into a human readable string.
     pub fn format(
         self: @This(),
-        comptime layout: []const u8,
-        opts: std.fmt.FormatOptions,
         writer: anytype,
-    ) @TypeOf(writer).Error!void {
+    ) std.Io.Writer.Error!void {
         try writer.print("{s}", .{@tagName(self.type)});
         try writer.print(" {s}", .{self.name});
 
         try writer.print("(", .{});
         for (self.inputs, 0..) |input, i| {
-            try input.format(layout, opts, writer);
+            try input.format(writer);
             if (i != self.inputs.len - 1) try writer.print(", ", .{});
         }
         try writer.print(")", .{});
@@ -341,7 +341,7 @@ pub const Error = struct {
         comptime self: @This(),
         allocator: Allocator,
         values: AbiParametersToPrimative(self.inputs),
-    ) (AbiEncoder.Errors || error{NoSpaceLeft})![]u8 {
+    ) (AbiEncoder.Errors || error{NoSpaceLeft} || Writer.Error)![]u8 {
         return encoder.encodeAbiError(self, allocator, values);
     }
     /// Decode a encoded error based on itself.
@@ -409,15 +409,13 @@ pub const Constructor = struct {
     /// Format the struct into a human readable string.
     pub fn format(
         self: @This(),
-        comptime layout: []const u8,
-        opts: std.fmt.FormatOptions,
         writer: anytype,
-    ) @TypeOf(writer).Error!void {
+    ) std.Io.Writer.Error!void {
         try writer.print("{s}", .{@tagName(self.type)});
 
         try writer.print("(", .{});
         for (self.inputs, 0..) |input, i| {
-            try input.format(layout, opts, writer);
+            try input.format(writer);
             if (i != self.inputs.len - 1) try writer.print(", ", .{});
         }
         try writer.print(")", .{});
@@ -481,13 +479,8 @@ pub const Fallback = struct {
     /// Format the struct into a human readable string.
     pub fn format(
         self: @This(),
-        comptime layout: []const u8,
-        opts: std.fmt.FormatOptions,
         writer: anytype,
-    ) @TypeOf(writer).Error!void {
-        _ = opts;
-        _ = layout;
-
+    ) std.Io.Writer.Error!void {
         try writer.print("{s}", .{@tagName(self.type)});
         try writer.print("()", .{});
 
@@ -504,13 +497,8 @@ pub const Receive = struct {
     /// Format the struct into a human readable string.
     pub fn format(
         self: @This(),
-        comptime layout: []const u8,
-        opts: std.fmt.FormatOptions,
         writer: anytype,
-    ) @TypeOf(writer).Error!void {
-        _ = opts;
-        _ = layout;
-
+    ) std.Io.Writer.Error!void {
         try writer.print("{s}", .{@tagName(self.type)});
         try writer.print("() external ", .{});
 
@@ -563,12 +551,10 @@ pub const AbiItem = union(enum) {
 
     pub fn format(
         self: @This(),
-        comptime layout: []const u8,
-        opts: std.fmt.FormatOptions,
         writer: anytype,
-    ) @TypeOf(writer).Error!void {
+    ) std.Io.Writer.Error!void {
         switch (self) {
-            inline else => |value| try value.format(layout, opts, writer),
+            inline else => |value| try value.format(writer),
         }
     }
 };

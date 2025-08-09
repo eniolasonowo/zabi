@@ -10,9 +10,10 @@ const DecoderErrors = decoder.DecoderErrors;
 const DecodeOptions = decoder.DecodeOptions;
 const EncodeErrors = encoder.EncodeErrors;
 const ParamType = @import("param_type.zig").ParamType;
+const Writer = std.Io.Writer;
 
 /// Set of possible errors when running `allocPrepare`
-pub const PrepareErrors = Allocator.Error || error{NoSpaceLeft};
+pub const PrepareErrors = Allocator.Error || error{NoSpaceLeft} || Writer.Error;
 
 /// Struct to represent solidity Abi Paramters
 pub const AbiParameter = struct {
@@ -37,7 +38,7 @@ pub const AbiParameter = struct {
         const encoded = try encoder.encodeAbiParameters(allocator, &.{self}, values);
         defer encoded.deinit();
 
-        const hexed = try std.fmt.allocPrint(allocator, "{s}", .{std.fmt.fmtSliceHexLower(encoded.data)});
+        const hexed = try std.fmt.allocPrint(allocator, "{x}", .{encoded});
 
         return hexed;
     }
@@ -63,14 +64,12 @@ pub const AbiParameter = struct {
     /// Format the struct into a human readable string.
     pub fn format(
         self: @This(),
-        comptime layout: []const u8,
-        opts: std.fmt.FormatOptions,
         writer: anytype,
-    ) @TypeOf(writer).Error!void {
+    ) std.Io.Writer.Error!void {
         if (self.components) |components| {
             try writer.print("(", .{});
             for (components, 0..) |component, i| {
-                try component.format(layout, opts, writer);
+                try component.format(writer);
                 if (i != components.len - 1) try writer.print(", ", .{});
             }
             try writer.print(")", .{});
@@ -84,7 +83,7 @@ pub const AbiParameter = struct {
     /// Intended to use for hashing purposes.
     pub fn prepare(
         self: @This(),
-        writer: anytype,
+        writer: *Writer,
     ) PrepareErrors!void {
         if (self.components) |components| {
             try writer.print("(", .{});
@@ -110,14 +109,12 @@ pub const AbiEventParameter = struct {
     /// Format the struct into a human readable string.
     pub fn format(
         self: @This(),
-        comptime layout: []const u8,
-        opts: std.fmt.FormatOptions,
         writer: anytype,
-    ) @TypeOf(writer).Error!void {
+    ) std.Io.Writer.Error!void {
         if (self.components) |components| {
             try writer.print("(", .{});
             for (components, 0..) |component, i| {
-                try component.format(layout, opts, writer);
+                try component.format(writer);
                 if (i != components.len - 1) try writer.print(", ", .{});
             }
             try writer.print(")", .{});
@@ -132,7 +129,7 @@ pub const AbiEventParameter = struct {
     /// Intended to use for hashing purposes.
     pub fn prepare(
         self: @This(),
-        writer: anytype,
+        writer: *Writer,
     ) PrepareErrors!void {
         if (self.components) |components| {
             try writer.print("(", .{});

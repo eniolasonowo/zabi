@@ -1,4 +1,3 @@
-const c = @import("c.zig");
 const std = @import("std");
 
 const Allocator = std.mem.Allocator;
@@ -9,6 +8,10 @@ const ParseError = std.json.ParseError;
 const Scanner = std.json.Scanner;
 const Sha256 = std.crypto.hash.sha2.Sha256;
 const Tuple = std.meta.Tuple;
+
+const c = @cImport({
+    @cInclude("c_kzg_4844.h");
+});
 
 const KZG4844 = @This();
 
@@ -590,7 +593,7 @@ test "Blob_to_kzg_commitment" {
     _ = try std.fmt.hexToBytes(&decoded, parsed.value.input.blob[2..]);
     const commit = try trusted.blobToKZGCommitment(decoded);
 
-    try std.testing.expectFmt(parsed.value.output, "0x{s}", .{std.fmt.fmtSliceHexLower(commit[0..])});
+    try std.testing.expectFmt(parsed.value.output, "0x{x}", .{commit[0..]});
 }
 
 test "Compute_kzg_proof" {
@@ -621,8 +624,8 @@ test "Compute_kzg_proof" {
     _ = try std.fmt.hexToBytes(&z, parsed.value.input.z[2..]);
     const proof = try trusted.computeKZGProof(decoded, z);
 
-    try std.testing.expectFmt(parsed.value.output[0], "0x{s}", .{std.fmt.fmtSliceHexLower(proof.proof[0..])});
-    try std.testing.expectFmt(parsed.value.output[1], "0x{s}", .{std.fmt.fmtSliceHexLower(proof.y[0..])});
+    try std.testing.expectFmt(parsed.value.output[0], "0x{x}", .{proof.proof[0..]});
+    try std.testing.expectFmt(parsed.value.output[1], "0x{x}", .{proof.y[0..]});
 }
 
 test "Verify_kzg_proof" {

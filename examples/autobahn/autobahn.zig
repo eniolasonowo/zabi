@@ -2,7 +2,8 @@ const std = @import("std");
 const clients = @import("zabi").clients;
 
 const Allocator = std.mem.Allocator;
-const WebSocketClient = clients.WebSocketClient;
+const WebSocketClient = clients.blocking.WebSocketClient;
+const AsyncWebSocketClient = clients.non_blocking.AsyncWebSocketClient;
 
 pub fn main() !void {
     var gpa = std.heap.GeneralPurposeAllocator(.{}){};
@@ -33,7 +34,7 @@ pub fn main() !void {
     };
 
     // wait 5 seconds for autobanh server to be up
-    std.time.sleep(std.time.ns_per_s * 1);
+    std.Thread.sleep(std.time.ns_per_s * 1);
 
     for (cases, 0..) |case, i| {
         std.debug.print("running case: {s}\n", .{case});

@@ -3,7 +3,7 @@ const clients = @import("zabi").clients;
 const decoder = @import("zabi").decoding;
 const std = @import("std");
 
-const WebSocket = clients.WebSocket;
+const WebProvider = clients.Provider.WebsocketProvider;
 
 pub const CliOptions = struct {
     url: []const u8,
@@ -20,22 +20,21 @@ pub fn main() !void {
 
     const uri = try std.Uri.parse(parsed.url);
 
-    var socket = try WebSocket.init(.{
+    var socket = try WebProvider.init(.{
         .network_config = .{ .endpoint = .{ .uri = uri } },
         .allocator = gpa.allocator(),
     });
     defer socket.deinit();
 
-    const id = try socket.watchLogs(.{
+    try socket.readLoopSeperateThread();
+
+    const id = try socket.provider.watchLogs(.{
         .address = try @import("zabi").utils.utils.addressToBytes("0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"),
         .topics = &.{@constCast(&try @import("zabi").utils.utils.hashToBytes("0xddf252ad1be2c89b69c2b068fc378daa952ba7f163c4a11628f55a4df523b3ef"))},
     });
     defer id.deinit();
 
     std.debug.print("Sub id: 0x{x}\n", .{id.response});
-    // There is currently a bug on the tls client that will cause index out of bound errors
-    // https://github.com/ziglang/zig/issues/15226
-    // Make sure that for now the data you are using is not big enough to cause these crashes.
     while (true) {
         const event = try socket.getLogsSubEvent();
         defer event.deinit();
@@ -46,10 +45,10 @@ pub fn main() !void {
         const topics = try decoder.logs_decoder.decodeLogs(struct { [32]u8, [20]u8, [20]u8 }, event.response.params.result.topics, .{});
 
         std.debug.print("Transfer event found. Value transfered: {d} dollars\n", .{value.result / 1000000});
-        std.debug.print("From: 0x{s}\n", .{std.fmt.fmtSliceHexLower(&topics[1])});
-        std.debug.print("To: 0x{s}\n", .{std.fmt.fmtSliceHexLower(&topics[2])});
+        std.debug.print("From: 0x{x}\n", .{&topics[1]});
+        std.debug.print("To: 0x{x}\n", .{&topics[2]});
     }
 
-    const unsubed = try socket.unsubscribe(id.response);
+    const unsubed = try socket.provider.unsubscribe(id.response);
     defer unsubed.deinit();
 }

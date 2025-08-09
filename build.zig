@@ -2,7 +2,7 @@ const env_parser = @import("src/utils/env_load.zig");
 const std = @import("std");
 const builtin = @import("builtin");
 
-const min_zig_string = "0.14.0";
+const min_zig_string = "0.15.0-dev.1160+e43617e68";
 
 /// Build zabi modules and test runners.
 pub fn build(b: *std.Build) void {
@@ -62,13 +62,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // Build the library with the ens-client module.
-    const zabi_ens = b.addModule("zabi-ens", .{
-        .root_source_file = b.path("src/clients/ens/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
     // Build the library with the encoding module.
     const zabi_encoding = b.addModule("zabi-encoding", .{
         .root_source_file = b.path("src/encoding/root.zig"),
@@ -97,13 +90,6 @@ pub fn build(b: *std.Build) void {
         .optimize = optimize,
     });
 
-    // Build the library with the op-stack module.
-    const zabi_op_stack = b.addModule("zabi-op-stack", .{
-        .root_source_file = b.path("src/clients/optimism/root.zig"),
-        .target = target,
-        .optimize = optimize,
-    });
-
     // Build the library with the types module.
     const zabi_types = b.addModule("zabi-types", .{
         .root_source_file = b.path("src/types/root.zig"),
@@ -127,11 +113,9 @@ pub fn build(b: *std.Build) void {
         zabi.addImport("zabi-crypto", zabi_crypto);
         zabi.addImport("zabi-decoding", zabi_decoding);
         zabi.addImport("zabi-encoding", zabi_encoding);
-        zabi.addImport("zabi-ens", zabi_ens);
         zabi.addImport("zabi-evm", zabi_evm);
         zabi.addImport("zabi-human", zabi_human);
         zabi.addImport("zabi-meta", zabi_meta);
-        zabi.addImport("zabi-op-stack", zabi_op_stack);
         zabi.addImport("zabi-types", zabi_types);
         zabi.addImport("zabi-utils", zabi_utils);
     }
@@ -179,16 +163,6 @@ pub fn build(b: *std.Build) void {
         zabi_encoding.addImport("zabi-utils", zabi_utils);
     }
 
-    // Adds the dependencies for `zabi-ens` module.
-    {
-        zabi_ens.addImport("zabi-abi", zabi_abi);
-        zabi_ens.addImport("zabi-clients", zabi_clients);
-        zabi_ens.addImport("zabi-decoding", zabi_decoding);
-        zabi_ens.addImport("zabi-encoding", zabi_encoding);
-        zabi_ens.addImport("zabi-types", zabi_types);
-        zabi_ens.addImport("zabi-utils", zabi_utils);
-    }
-
     // Adds the dependencies for `zabi-evm` module.
     {
         zabi_evm.addImport("zabi-utils", zabi_utils);
@@ -206,18 +180,6 @@ pub fn build(b: *std.Build) void {
     {
         zabi_meta.addImport("zabi-abi", zabi_abi);
         zabi_meta.addImport("zabi-types", zabi_types);
-    }
-
-    // Adds the dependencies for `zabi-op-stack` module.
-    {
-        zabi_op_stack.addImport("zabi-abi", zabi_abi);
-        zabi_op_stack.addImport("zabi-clients", zabi_clients);
-        zabi_op_stack.addImport("zabi-crypto", zabi_crypto);
-        zabi_op_stack.addImport("zabi-decoding", zabi_decoding);
-        zabi_op_stack.addImport("zabi-encoding", zabi_encoding);
-        zabi_op_stack.addImport("zabi-meta", zabi_meta);
-        zabi_op_stack.addImport("zabi-types", zabi_types);
-        zabi_op_stack.addImport("zabi-utils", zabi_utils);
     }
 
     // Adds the dependencies for `zabi-types` module.
@@ -262,11 +224,15 @@ fn buildTestOrCoverage(
 
     // Builds and runs the main tests of zabi.
     {
-        const lib_unit_tests = b.addTest(.{
-            .name = "zabi-tests",
+        const lib_unit_tests_mod = b.createModule(.{
             .root_source_file = b.path("tests/root.zig"),
             .target = target,
             .optimize = optimize,
+        });
+        const lib_unit_tests = b.addTest(.{
+            .name = "zabi-tests",
+            .root_module = lib_unit_tests_mod,
+
             .test_runner = .{
                 .path = b.path("build/test_runner.zig"),
                 .mode = .simple,
@@ -286,11 +252,14 @@ fn buildTestOrCoverage(
 
     // Build and run coverage test runner if `zig build coverage` was ran
     {
-        const coverage_lib_unit_tests = b.addTest(.{
-            .name = "zabi-tests-coverage",
-            .root_source_file = b.path("tests/root_benchmark.zig"),
+        const coverage_lib_tests_mod = b.createModule(.{
+            .root_source_file = b.path("tests/root.zig"),
             .target = target,
             .optimize = optimize,
+        });
+        const coverage_lib_unit_tests = b.addTest(.{
+            .name = "zabi-tests-coverage",
+            .root_module = coverage_lib_tests_mod,
             .test_runner = .{
                 .path = b.path("build/test_runner.zig"),
                 .mode = .simple,
@@ -312,7 +281,6 @@ fn buildTestOrCoverage(
         kcov_collect.addPrefixedDirectoryArg("--include-pattern=", b.path("src"));
         _ = kcov_collect.addOutputFileArg(coverage_lib_unit_tests.name);
         kcov_collect.addArtifactArg(coverage_lib_unit_tests);
-        kcov_collect.enableTestRunnerMode();
 
         const install_coverage = b.addInstallDirectory(.{
             .source_dir = kcov_collect.addOutputFileArg("."),
@@ -337,11 +305,14 @@ fn buildWasm(b: *std.Build, module: *std.Build.Module) void {
         }),
     };
 
-    const wasm = b.addExecutable(.{
-        .name = "zabi_wasm",
+    const wasm_mod = b.createModule(.{
         .root_source_file = b.path("src/root_wasm.zig"),
         .target = b.resolveTargetQuery(wasm_crosstarget),
         .optimize = .ReleaseSmall,
+    });
+    const wasm = b.addExecutable(.{
+        .name = "zabi_wasm",
+        .root_module = wasm_mod,
     });
     wasm.root_module.addImport("zabi", module);
 
@@ -373,8 +344,16 @@ fn addDependencies(
         .optimize = optimize,
     });
 
+    // const aio = b.dependency("aio", .{
+    //     .target = target,
+    //     .optimize = optimize,
+    // });
+
     mod.addImport("c_kzg_4844", c_kzg_4844_dep.module("c_kzg_4844"));
     mod.linkLibrary(c_kzg_4844_dep.artifact("c_kzg_4844"));
+
+    // mod.addImport("aio", aio.module("aio"));
+    // mod.addImport("coro", aio.module("coro"));
 }
 /// Builds and runs the benchmarks
 fn buildBenchmark(
@@ -383,11 +362,14 @@ fn buildBenchmark(
     optimize: std.builtin.OptimizeMode,
     dependency: *std.Build.Module,
 ) void {
-    const bench = b.addTest(.{
-        .name = "benchmark",
+    const bench_mod = b.createModule(.{
         .root_source_file = b.path("tests/root_benchmark.zig"),
         .target = target,
         .optimize = optimize,
+    });
+    const bench = b.addTest(.{
+        .name = "benchmark",
+        .root_module = bench_mod,
         .test_runner = .{
             .path = b.path("build/benchmark.zig"),
             .mode = .simple,
@@ -417,18 +399,21 @@ fn buildExamples(
         "examples/interpreter/interpreter.zig",
         "examples/block_explorer/explorer.zig",
         "examples/wallet/wallet.zig",
-        "examples/contract/contract.zig",
         "examples/autobahn/autobahn.zig",
     };
 
     inline for (examples) |example| {
         const index = std.mem.lastIndexOfScalar(u8, example, '/').?;
-        const example_exe = b.addExecutable(.{
-            // example name -> filename - .zig extension
-            .name = example[index + 1 .. example.len - 4],
+
+        const example_mod = b.createModule(.{
             .root_source_file = b.path(example),
             .target = target,
             .optimize = optimize,
+        });
+        const example_exe = b.addExecutable(.{
+            // example name -> filename - .zig extension
+            .name = example[index + 1 .. example.len - 4],
+            .root_module = example_mod,
         });
         example_exe.root_module.addImport("zabi", dependency);
         addDependencies(b, example_exe.root_module, target, optimize);
@@ -439,12 +424,15 @@ fn buildExamples(
 }
 /// Builds and runs a runner to generate documentation based on the `doc_comments` tokens in the codebase.
 fn buildDocs(b: *std.Build, target: std.Build.ResolvedTarget) void {
-    const docs = b.addExecutable(.{
-        .name = "docs",
+    const docs_mod = b.createModule(.{
         .root_source_file = b.path("build/docs_generate.zig"),
         .target = target,
         .optimize = .ReleaseFast,
         .link_libc = true,
+    });
+    const docs = b.addExecutable(.{
+        .name = "docs",
+        .root_module = docs_mod,
     });
 
     var docs_run = b.addRunArtifact(docs);
@@ -459,7 +447,7 @@ fn loadVariables(b: *std.Build, env_path: []const u8, exe: *std.Build.Step.Run) 
         std.debug.panic("Failed to read from {s} file! Error: {s}", .{ env_path, @errorName(err) });
     defer file.close();
 
-    const source = file.readToEndAllocOptions(b.allocator, std.math.maxInt(u32), null, @alignOf(u8), 0) catch |err|
+    const source = file.readToEndAllocOptions(b.allocator, std.math.maxInt(u32), null, .@"1", 0) catch |err|
         std.debug.panic("Failed to read from {s} file! Error: {s}", .{ env_path, @errorName(err) });
     defer b.allocator.free(source);
 

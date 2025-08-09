@@ -1,4 +1,10 @@
+//! Websocket client implementation that is spec compliant and autobahn compliant.
+//!
+//! This implementation relies on multithreading for the read loop but there are future plans to
+//! implement different solution for this and the IPC client
+const aio = @import("aio");
 const builtin = @import("builtin");
+const coro = @import("coro");
 const std = @import("std");
 const testing = std.testing;
 
@@ -26,8 +32,9 @@ const wsclient_log = std.log.scoped(.ws_client);
 const WebsocketClient = @This();
 
 /// Set of possible error's when trying to perform the initial connection to the host.
-pub const ConnectionErrors = TlsClient.InitError(Stream) || TcpConnectToHostError ||
-    CertificateBundle.RescanError || error{ UnsupportedSchema, UnspecifiedHostName };
+pub const ConnectionErrors = TlsClient.InitError(AsyncStream) || TcpConnectToHostError ||
+    CertificateBundle.RescanError || error{ UnsupportedSchema, UnspecifiedHostName, UnableToConnect } ||
+    coro.io.Error || aio.Connect.Error || aio.Socket.Error;
 
 /// Set of possible errors when asserting a handshake response.
 pub const AssertionError = error{
@@ -40,10 +47,10 @@ pub const AssertionError = error{
 pub const SendHandshakeError = NetStream.WriteError || error{NoSpaceLeft};
 
 /// Set of possible errors when reading a handshake response.
-pub const ReadHandshakeError = Allocator.Error || Stream.ReadError || AssertionError || TlsError;
+pub const ReadHandshakeError = Allocator.Error || AsyncStream.ReadError || AssertionError || TlsError;
 
 /// Set of possible errors when trying to read values directly from the socket.
-pub const SocketReadError = Stream.ReadError || Allocator.Error || error{EndOfStream} || TlsError;
+pub const SocketReadError = AsyncStream.ReadError || Allocator.Error || error{EndOfStream} || TlsError;
 
 /// RFC Compliant set of errors.
 pub const PayloadErrors = error{
@@ -133,16 +140,127 @@ pub const Fragment = struct {
     }
 };
 
+/// Non blocking implementation of a `std.net.Stream`
+pub const AsyncStream = struct {
+    /// Underlying platform-defined type which may or may not be
+    /// interchangeable with a file system file descriptor.
+    handle: std.posix.socket_t,
+
+    /// Set of possible errors when reading from the socket.
+    pub const ReadError = aio.Read.Error || coro.io.Error || std.posix.PReadError;
+
+    /// Set of possible error when writting to the stream.
+    pub const WriteError = coro.io.Error || aio.Write.Error || std.posix.PWriteError;
+
+    pub const Reader = std.io.Reader(AsyncStream, ReadError, read);
+    pub const Writer = std.io.Writer(AsyncStream, WriteError, write);
+
+    pub fn reader(self: AsyncStream) Reader {
+        return .{ .context = self };
+    }
+
+    pub fn close(self: AsyncStream) void {
+        coro.io.single(.close_socket, .{ .socket = self.handle }) catch {};
+    }
+
+    pub fn write(self: AsyncStream, buffer: []const u8) WriteError!usize {
+        var out_bytes: usize = 0;
+
+        try coro.io.single(.write, .{
+            .file = std.fs.File{ .handle = self.handle },
+            .buffer = buffer,
+            .out_written = &out_bytes,
+        });
+
+        return out_bytes;
+    }
+
+    pub fn writev(self: AsyncStream, iovecs: []const std.posix.iovec_const) WriteError!usize {
+        var out_bytes: usize = 0;
+
+        try coro.io.single(.writev, .{
+            .file = std.fs.File{ .handle = self.handle },
+            .iov = iovecs,
+            .out_written = &out_bytes,
+        });
+
+        return out_bytes;
+    }
+
+    pub fn writevAll(self: AsyncStream, iovecs: []std.posix.iovec_const) WriteError!void {
+        if (iovecs.len == 0) return;
+
+        var i: usize = 0;
+        while (true) {
+            var amt = try self.writev(iovecs[i..]);
+            while (amt >= iovecs[i].len) {
+                amt -= iovecs[i].len;
+                i += 1;
+                if (i >= iovecs.len) return;
+            }
+            iovecs[i].base += amt;
+            iovecs[i].len -= amt;
+        }
+    }
+
+    pub fn writeAll(self: AsyncStream, bytes: []const u8) WriteError!void {
+        var index: usize = 0;
+        while (index < bytes.len) {
+            index += try self.write(bytes[index..]);
+        }
+    }
+
+    pub fn readAll(s: AsyncStream, buffer: []u8) ReadError!usize {
+        return readAtLeast(s, buffer, buffer.len);
+    }
+
+    pub fn readAtLeast(s: AsyncStream, buffer: []u8, len: usize) ReadError!usize {
+        std.debug.assert(len <= buffer.len);
+
+        var index: usize = 0;
+        while (index < len) {
+            const amt = try s.read(buffer[index..]);
+            if (amt == 0) break;
+            index += amt;
+        }
+        return index;
+    }
+
+    pub fn read(self: AsyncStream, buffer: []u8) ReadError!usize {
+        var read_bytes: usize = 0;
+
+        try coro.io.single(.read, .{
+            .file = std.fs.File{ .handle = self.handle },
+            .buffer = buffer,
+            .out_read = &read_bytes,
+        });
+
+        return read_bytes;
+    }
+
+    pub fn readv(self: AsyncStream, iovecs: []std.posix.iovec) ReadError!usize {
+        var out_bytes: usize = 0;
+
+        try coro.io.single(.readv, .{
+            .file = std.fs.File{ .handle = self.handle },
+            .iov = iovecs,
+            .out_read = &out_bytes,
+        });
+
+        return out_bytes;
+    }
+};
+
 /// Wrapper stream around a `std.net.Stream` and a `TlsClient`.
 pub const NetStream = struct {
     /// Set of possible errors when writting to the stream.
-    pub const WriteError = Stream.WriteError;
+    pub const WriteError = AsyncStream.WriteError;
     /// Set of possible errors when reading from the stream.
-    pub const ReadError = Stream.ReadError || TlsError;
+    pub const ReadError = AsyncStream.ReadError || TlsError;
 
     /// The connection to the socket that will be used by the
     /// client or the tls_stream if available.
-    net_stream: Stream,
+    net_stream: AsyncStream,
     /// Null by default since we might want to connect
     /// locally and don't want to enforce it.
     tls_stream: ?TlsClient,
@@ -226,7 +344,34 @@ pub fn connect(
         .message_type = null,
     };
 
-    const stream = try std.net.tcpConnectToHost(allocator, hostname, port);
+    var socket: std.posix.socket_t = undefined;
+
+    const list = try std.net.getAddressList(allocator, hostname, port);
+    defer list.deinit();
+
+    if (list.addrs.len == 0) return error.UnknownHostName;
+
+    const stream = for (list.addrs) |addr| {
+        try coro.io.single(.socket, .{
+            .domain = addr.any.family,
+            .flags = std.posix.SOCK.STREAM | std.posix.SOCK.CLOEXEC,
+            .protocol = std.posix.IPPROTO.TCP,
+            .out_socket = &socket,
+        });
+
+        coro.io.single(.connect, .{
+            .socket = socket,
+            .addr = &addr.any,
+            .addrlen = addr.getOsSockLen(),
+        }) catch |err| switch (err) {
+            error.ConnectionRefused => {
+                continue;
+            },
+            else => return err,
+        };
+
+        break AsyncStream{ .handle = socket };
+    } else return error.UnableToConnect;
 
     const tls_client: ?TlsClient = tls: {
         if (scheme != .tls)
