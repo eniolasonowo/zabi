@@ -16,7 +16,7 @@ pub const DecodeOptions = struct {
     /// Max amount of bytes allowed to be read by the decoder.
     /// This avoid a DoS vulnerability discovered here:
     /// https://github.com/paulmillr/micro-eth-signer/discussions/20
-    max_bytes: u16 = 1024,
+    max_bytes: u32 = 1024,
     /// By default this is false.
     allow_junk_data: bool = false,
     /// Tell the decoder if an allocation should be made.
@@ -38,7 +38,7 @@ pub fn Decoded(comptime T: type) type {
         /// Decoded data
         data: T,
         /// Total amount of bytes read from the slice.
-        bytes_read: u16,
+        bytes_read: u32,
     };
 }
 /// Result type of a abi decoded slice. Allocations are managed via an arena.
@@ -220,7 +220,6 @@ pub fn decodeAbiParameterLeaky(comptime T: type, allocator: Allocator, encoded: 
     std.debug.assert(encoded.len > 31 and encoded.len & 1 == 0); // Not a hex string.
 
     const decoded = try decodeParameter(T, allocator, encoded, 0, options);
-    
 
     if (decoded.consumed >= options.max_bytes)
         return error.BufferOverrun;
@@ -233,7 +232,6 @@ pub fn decodeAbiParameterLeaky(comptime T: type, allocator: Allocator, encoded: 
 /// Internal function that is used to parse encoded abi values.
 fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, position: usize, options: DecodeOptions) DecoderErrors!Decoded(T) {
     const info = @typeInfo(T);
-
 
     switch (info) {
         .bool => {
@@ -271,7 +269,7 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
             const remainder = length % 32;
             // const padded = length + 32 - remainder;
             var padded: usize = length;
-            if (remainder != 0){
+            if (remainder != 0) {
                 padded = length + 32 - remainder;
             }
 
@@ -282,7 +280,6 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
             };
         },
         .array => |arr_info| {
-
             if (arr_info.child == u8) {
                 if (arr_info.len > 32)
                     @compileError("Invalid u8 array length. Expected lower than or equal to 32");
@@ -367,9 +364,8 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
                     };
                 },
                 .slice => {
-
                     if (ptr_info.child == u8) {
-                    // std.debug.print("Type2: {s} \n", .{@typeName(T)});
+                        // std.debug.print("Type2: {s} \n", .{@typeName(T)});
                         var bytes_read: u16 = 64; //offset + length;
                         const offset: usize = @truncate(std.mem.readInt(u256, @ptrCast(encoded[position .. position + 32]), .big));
                         // const offset : usize = 96;
@@ -387,22 +383,21 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
 
                         var startData = offset + 32;
                         var end = startData + 32;
-                        var i :usize = 0;
-                        while(i < length){
-                            const slice_ = encoded[startData .. end];
+                        var i: usize = 0;
+                        while (i < length) {
+                            const slice_ = encoded[startData..end];
 
-                            const data : u256 = @truncate(std.mem.readInt(u256,@ptrCast(slice_), .big)); //reading data as 32 bytes with(u256)
+                            const data: u256 = @truncate(std.mem.readInt(u256, @ptrCast(slice_), .big)); //reading data as 32 bytes with(u256)
                             bytes_read += 32;
-                            const data_ : u8 = @intCast(data);//cast to u8  
+                            const data_: u8 = @intCast(data); //cast to u8
 
                             // std.debug.print("Dec: {any} \n", .{data_});
                             try slice_u8.append(data_);
 
                             startData += 32;
                             end += 32;
-                            i += 1; 
+                            i += 1;
                         }
-
 
                         const remainder = length % 32;
                         var padding_bytes: usize = 0;
@@ -415,7 +410,7 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
                         return .{
                             .consumed = 32,
                             .data = try slice_u8.toOwnedSlice(),
-                            .bytes_read = bytes_read//@intCast(64 + length + padding_bytes),
+                            .bytes_read = bytes_read, //@intCast(64 + length + padding_bytes),
                         };
                     }
 
@@ -423,7 +418,7 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
                     const length: usize = @truncate(std.mem.readInt(u256, @ptrCast(encoded[offset .. offset + 32]), .big));
 
                     var pos: usize = 0;
-                    var read: u16 = 0;
+                    var read: u32 = 0;
 
                     var list = std.ArrayList(ptr_info.child).init(allocator);
                     errdefer list.deinit();
@@ -450,16 +445,14 @@ fn decodeParameter(comptime T: type, allocator: Allocator, encoded: []u8, positi
             }
         },
         .@"struct" => |struct_info| {
-
             var result: T = undefined;
 
             var pos: usize = 0;
-            var read: u16 = 0;
+            var read: u32 = 0;
 
             if (struct_info.is_tuple) {
                 inline for (struct_info.fields) |field| {
                     const decoded = try decodeParameter(field.type, allocator, encoded, pos + position, options);
-
 
                     pos += decoded.consumed;
                     read += decoded.bytes_read;

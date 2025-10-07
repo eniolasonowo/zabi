@@ -127,6 +127,7 @@ pub const PublicChains = enum(usize) {
     sepolia = 11155111,
     op_sepolia = 11155420,
     unichain = 130,
+    hyperliquid = 999,
 };
 
 /// Wrapper around std.json.Parsed(T). Response for any of the RPC clients
