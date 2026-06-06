@@ -95,6 +95,7 @@ pub const EthereumRpcMethods = enum {
     eth_getProof,
     eth_protocolVersion,
     eth_syncing,
+    eth_simulateV1,
     eth_getRawTransactionByHash,
     txpool_content,
     txpool_contentFrom,

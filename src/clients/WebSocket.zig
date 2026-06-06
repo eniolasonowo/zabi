@@ -1292,6 +1292,11 @@ pub fn readLoop(self: *WebSocketHandler) !void {
 pub fn sendEthCall(self: *WebSocketHandler, call_object: EthCall, opts: BlockNumberRequest) BasicRequestErrors!RPCResponse(Hex) {
     return self.sendEthCallRequest(Hex, call_object, opts, .eth_call);
 }
+
+pub fn sendEthSimulateV1(self: *WebSocketHandler, call_object: []EthCall, opts: BlockNumberRequest) BasicRequestErrors!RPCResponse([]block.Eth_SimulateV1BlockResult) {
+    return self.sendEthSimulateV1Request([]block.Eth_SimulateV1BlockResult, call_object, opts, .eth_simulateV1);
+}
+
 /// Creates new message call transaction or a contract creation for signed transactions.
 /// Transaction must be serialized and signed before hand.
 ///
@@ -1801,6 +1806,49 @@ fn sendEthCallRequest(
     } else {
         const request: EthereumRequest(struct { EthCall, BalanceBlockTag }) = .{
             .params = .{ call_object, tag },
+            .method = method,
+            .id = @intFromEnum(self.network_config.chain_id),
+        };
+
+        try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());
+    }
+
+    return self.sendRpcRequest(T, buf_writter.getWritten());
+}
+
+fn sendEthSimulateV1Request(
+    self: *WebSocketHandler,
+    comptime T: type,
+    call_object: []EthCall,
+    opts: BlockNumberRequest,
+    method: EthereumRpcMethods,
+) BasicRequestErrors!RPCResponse(T) {
+    const tag: BalanceBlockTag = opts.tag orelse .latest;
+
+    var sim_blocks = [_]block.SimBlock{block.SimBlock{
+        .calls = call_object,
+    }};
+
+    // const sim_blocks : []SimBlock = [_]Sim
+    const payload = block.SimulatePayload{
+        .block_state_calls = &sim_blocks,
+    };
+
+    var request_buffer: [8 * 1024]u8 = undefined;
+
+    var buf_writter = std.io.fixedBufferStream(&request_buffer);
+
+    if (opts.block_number) |number| {
+        const request: EthereumRequest(struct { block.SimulatePayload, u64 }) = .{
+            .params = .{ payload, number },
+            .method = method,
+            .id = @intFromEnum(self.network_config.chain_id),
+        };
+
+        try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());
+    } else {
+        const request: EthereumRequest(struct { block.SimulatePayload, BalanceBlockTag }) = .{
+            .params = .{ payload, tag },
             .method = method,
             .id = @intFromEnum(self.network_config.chain_id),
         };
