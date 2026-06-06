@@ -229,10 +229,10 @@ pub const SimBlock = struct {
 };
 
 pub const SimulatePayload = struct {
-    block_state_calls: []SimBlock,
-    trace_transfers: bool = true,
+    blockStateCalls: []SimBlock,
+    traceTransfers: bool = true,
     validation: bool = false,
-    return_full_transactions: bool = false,
+    returnFullTransactions: bool = false,
 
     pub fn jsonParse(
         allocator: Allocator,

@@ -1825,13 +1825,17 @@ fn sendEthSimulateV1Request(
 ) BasicRequestErrors!RPCResponse(T) {
     const tag: BalanceBlockTag = opts.tag orelse .latest;
 
+    if (call_object.len == 0) {
+        return error.MissingField;
+    }
+
     var sim_blocks = [_]block.SimBlock{block.SimBlock{
         .calls = call_object,
     }};
 
     // const sim_blocks : []SimBlock = [_]Sim
     const payload = block.SimulatePayload{
-        .block_state_calls = &sim_blocks,
+        .blockStateCalls = &sim_blocks,
     };
 
     var request_buffer: [8 * 1024]u8 = undefined;
@@ -1856,5 +1860,9 @@ fn sendEthSimulateV1Request(
         try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());
     }
 
-    return self.sendRpcRequest(T, buf_writter.getWritten());
+    const raw_json = buf_writter.getWritten();
+
+    // std.debug.print("\n=== RAW JSON OUT ===\n{s}\n====================\n\n", .{raw_json});
+
+    return self.sendRpcRequest(T, raw_json);
 }
