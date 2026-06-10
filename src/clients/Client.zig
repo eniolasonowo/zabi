@@ -1805,6 +1805,7 @@ fn parseRPCEvent(
                 .UnsupportedMethod => return error.UnsupportedMethod,
                 .Disconnected => return error.Disconnected,
                 .ChainDisconnected => return error.ChainDisconnected,
+                .BlockGasLimitExceeded => return error.BlockGasLimitExceeded,
                 _ => return error.UnexpectedRpcErrorCode,
             }
         },

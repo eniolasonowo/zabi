@@ -315,6 +315,7 @@ pub const EthereumErrorCodes = enum(i64) {
     InvalidParams = -32602,
     InternalError = -32603,
     ParseError = -32700,
+    BlockGasLimitExceeded = -38015,
     _,
 
     pub fn jsonStringify(code: EthereumErrorCodes, stream: anytype) @TypeOf(stream.*).Error!void {
@@ -344,6 +345,7 @@ pub const EthereumZigErrors = error{
     UnsupportedMethod,
     Disconnected,
     ChainDisconnected,
+    BlockGasLimitExceeded,
 };
 
 /// Zig struct representation of a RPC error response

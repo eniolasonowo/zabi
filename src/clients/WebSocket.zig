@@ -1668,7 +1668,10 @@ pub fn writeSocketMessage(
 fn handleErrorResponse(self: *WebSocketHandler, event: ErrorResponse) EthereumZigErrors {
     _ = self;
 
-    wslog.debug("RPC error response: {s}\n", .{event.message});
+    wslog.debug("RPC error response: {s}, event code : {any}\n", .{ event.message, event.code });
+
+    wslog.info("RPC error response: {s} ,  event code : {any}\n", .{ event.message, event.code });
+
     switch (event.code) {
         .ContractErrorCode => return error.EvmFailedToExecute,
         .TooManyRequests => return error.TooManyRequests,
@@ -1689,7 +1692,14 @@ fn handleErrorResponse(self: *WebSocketHandler, event: ErrorResponse) EthereumZi
         .UnsupportedMethod => return error.UnsupportedMethod,
         .Disconnected => return error.Disconnected,
         .ChainDisconnected => return error.ChainDisconnected,
-        _ => return error.UnexpectedRpcErrorCode,
+        .BlockGasLimitExceeded => return error.BlockGasLimitExceeded,
+        else => {
+            const stdout = std.io.getStdOut().writer();
+            stdout.print("RPC error response: {s} ,  event code : {any}\n", .{ event.message, event.code }) catch {
+                return error.UnexpectedRpcErrorCode;
+            };
+            return error.UnexpectedRpcErrorCode;
+        },
     }
 }
 /// Sends requests with empty params.
@@ -1792,7 +1802,7 @@ fn sendEthCallRequest(
 ) BasicRequestErrors!RPCResponse(T) {
     const tag: BalanceBlockTag = opts.tag orelse .latest;
 
-    var request_buffer: [8 * 1024]u8 = undefined;
+    var request_buffer: [200 * 1024]u8 = undefined;
     var buf_writter = std.io.fixedBufferStream(&request_buffer);
 
     if (opts.block_number) |number| {
@@ -1838,7 +1848,7 @@ fn sendEthSimulateV1Request(
         .blockStateCalls = &sim_blocks,
     };
 
-    var request_buffer: [8 * 1024]u8 = undefined;
+    var request_buffer: [200 * 1024]u8 = undefined;
 
     var buf_writter = std.io.fixedBufferStream(&request_buffer);
 
