@@ -1839,8 +1839,27 @@ fn sendEthSimulateV1Request(
         return error.MissingField;
     }
 
+    const block_overrides = block.BlockOverrides{
+        .base_Fee = 0,
+    };
+
+    const from: [20]u8 = zabi_utils.utils.addressToBytes("0x3a274669A2eEA3a94470fD1492a3594D151670e0") catch {
+        return error.MissingField;
+    };
+
+    var accounts = std.AutoHashMap([20]u8, block.AccountOverride).init(self.allocator);
+    try accounts.put(from, block.AccountOverride{
+        .balance = 100e18,
+    });
+
+    const state_overrides = block.StateOverride{
+        .map = accounts,
+    };
+
     var sim_blocks = [_]block.SimBlock{block.SimBlock{
         .calls = call_object,
+        .block_overrides = block_overrides,
+        .state_overrides = state_overrides,
     }};
 
     // const sim_blocks : []SimBlock = [_]Sim
