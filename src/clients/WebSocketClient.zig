@@ -657,7 +657,7 @@ pub fn readMessage(self: *WebsocketClient) ReadMessageError!WebsocketMessage {
                 if (op_head.opcode == .text and !std.unicode.utf8ValidateSlice(payload))
                     return error.InvalidUtf8Payload;
 
-                wsclient_log.debug("Got websocket message: {s}", .{payload});
+                // wsclient_log.debug("Got websocket message: {s}", .{payload});
 
                 return .{
                     .opcode = op_head.opcode,

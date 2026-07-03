@@ -85,6 +85,8 @@ const WebSocketHandler = @This();
 
 const wslog = std.log.scoped(.ws);
 
+var request_counter = std.atomic.Value(u64).init(0);
+
 /// Set of connection errors when establishing a connection.
 pub const ConnectionErrors = error{
     UnsupportedSchema,
@@ -1297,6 +1299,10 @@ pub fn sendEthSimulateV1(self: *WebSocketHandler, call_object: []EthCall, opts: 
     return self.sendEthSimulateV1Request([]block.Eth_SimulateV1BlockResult, call_object, opts, .eth_simulateV1);
 }
 
+pub fn sendEthSimulateV1Multi(self: *WebSocketHandler, call_objects: [][]EthCall, opts: BlockNumberRequest) BasicRequestErrors!RPCResponse([]block.Eth_SimulateV1BlockResult) {
+    return self.sendEthSimulateV1RequestMultiBlock([]block.Eth_SimulateV1BlockResult, call_objects, opts, .eth_simulateV1);
+}
+
 /// Creates new message call transaction or a contract creation for signed transactions.
 /// Transaction must be serialized and signed before hand.
 ///
@@ -1805,11 +1811,13 @@ fn sendEthCallRequest(
     var request_buffer: [200 * 1024]u8 = undefined;
     var buf_writter = std.io.fixedBufferStream(&request_buffer);
 
+    // const id: usize = @intCast(std.time.microTimestamp());
+
     if (opts.block_number) |number| {
         const request: EthereumRequest(struct { EthCall, u64 }) = .{
             .params = .{ call_object, number },
             .method = method,
-            .id = @intFromEnum(self.network_config.chain_id),
+            .id = nextId(),
         };
 
         try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());
@@ -1817,13 +1825,90 @@ fn sendEthCallRequest(
         const request: EthereumRequest(struct { EthCall, BalanceBlockTag }) = .{
             .params = .{ call_object, tag },
             .method = method,
-            .id = @intFromEnum(self.network_config.chain_id),
+            .id = nextId(),
         };
 
         try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());
     }
 
     return self.sendRpcRequest(T, buf_writter.getWritten());
+}
+
+fn sendEthSimulateV1RequestMultiBlock(
+    self: *WebSocketHandler,
+    comptime T: type,
+    call_object: [][]EthCall,
+    opts: BlockNumberRequest,
+    method: EthereumRpcMethods,
+) BasicRequestErrors!RPCResponse(T) {
+    const tag: BalanceBlockTag = opts.tag orelse .latest;
+
+    if (call_object.len == 0) {
+        return error.MissingField;
+    }
+
+    const block_overrides = block.BlockOverrides{
+        .base_Fee = 0,
+    };
+
+    const from: [20]u8 = zabi_utils.utils.addressToBytes("0x3a274669A2eEA3a94470fD1492a3594D151670e0") catch {
+        return error.MissingField;
+    };
+
+    var accounts = std.AutoHashMap([20]u8, block.AccountOverride).init(self.allocator);
+    try accounts.put(from, block.AccountOverride{
+        .balance = 30e18,
+    });
+
+    const state_overrides = block.StateOverride{
+        .map = accounts,
+    };
+
+    var sim_blocks = try std.BoundedArray(block.SimBlock, 5).init(0);
+
+    for (call_object) |calls| {
+        try sim_blocks.append(block.SimBlock{
+            .calls = calls,
+            .block_overrides = block_overrides,
+            .state_overrides = state_overrides,
+        });
+    }
+
+    const payload = block.SimulatePayload{
+        .blockStateCalls = sim_blocks.slice(),
+    };
+
+    var request_buffer: [1 * 1024 * 1024]u8 = undefined;
+
+    var buf_writter = std.io.fixedBufferStream(&request_buffer);
+
+    if (opts.block_number) |number| {
+        const request: EthereumRequest(struct { block.SimulatePayload, u64 }) = .{
+            .params = .{ payload, number },
+            .method = method,
+            .id = nextId(),
+        };
+
+        try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());
+    } else {
+        const request: EthereumRequest(struct { block.SimulatePayload, BalanceBlockTag }) = .{
+            .params = .{ payload, tag },
+            .method = method,
+            .id = nextId(),
+        };
+
+        try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());
+    }
+
+    const raw_json = buf_writter.getWritten();
+
+    // std.debug.print("\n=== RAW JSON OUT ===\n{s}\n====================\n\n", .{raw_json});
+
+    return self.sendRpcRequest(T, raw_json);
+}
+
+fn nextId() u64 {
+    return request_counter.fetchAdd(1, .monotonic);
 }
 
 fn sendEthSimulateV1Request(
@@ -1867,15 +1952,17 @@ fn sendEthSimulateV1Request(
         .blockStateCalls = &sim_blocks,
     };
 
-    var request_buffer: [200 * 1024]u8 = undefined;
+    var request_buffer: [500 * 1024]u8 = undefined;
 
     var buf_writter = std.io.fixedBufferStream(&request_buffer);
+
+    // const id: usize = @intCast(std.time.nanoTimestamp() / 100);
 
     if (opts.block_number) |number| {
         const request: EthereumRequest(struct { block.SimulatePayload, u64 }) = .{
             .params = .{ payload, number },
             .method = method,
-            .id = @intFromEnum(self.network_config.chain_id),
+            .id = nextId(),
         };
 
         try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());
@@ -1883,7 +1970,7 @@ fn sendEthSimulateV1Request(
         const request: EthereumRequest(struct { block.SimulatePayload, BalanceBlockTag }) = .{
             .params = .{ payload, tag },
             .method = method,
-            .id = @intFromEnum(self.network_config.chain_id),
+            .id = nextId(),
         };
 
         try std.json.stringify(request, .{ .emit_null_optional_fields = false }, buf_writter.writer());

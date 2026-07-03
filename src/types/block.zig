@@ -230,7 +230,7 @@ pub const SimBlock = struct {
 
 pub const SimulatePayload = struct {
     blockStateCalls: []SimBlock,
-    traceTransfers: bool = true,
+    traceTransfers: bool = false,
     validation: bool = false,
     returnFullTransactions: bool = false,
 

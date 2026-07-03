@@ -1699,7 +1699,7 @@ fn sendEthCallRequest(
 ) BasicRequestErrors!RPCResponse(T) {
     const tag: BalanceBlockTag = opts.tag orelse .latest;
 
-    var request_buffer: [8 * 1024]u8 = undefined;
+    var request_buffer: [200 * 1024]u8 = undefined;
     var buf_writter = std.io.fixedBufferStream(&request_buffer);
 
     if (opts.block_number) |number| {
