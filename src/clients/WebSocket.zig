@@ -1331,7 +1331,15 @@ pub fn sendRpcRequest(self: *WebSocketHandler, comptime T: type, message: []u8) 
 
         try self.writeSocketMessage(message);
 
-        const message_value = self.getCurrentRpcEvent();
+        const message_value = blk: {
+            if (self.network_config.request_timeout_ns) |timeout_ns| {
+                break :blk self.rpc_channel.popTimeout(timeout_ns) catch {
+                    wslog.warn("RPC response timed out after {d} ms, retry {d}", .{ timeout_ns / std.time.ns_per_ms, retries });
+                    continue;
+                };
+            }
+            break :blk self.getCurrentRpcEvent();
+        };
         errdefer message_value.deinit();
 
         const parsed = try std.json.parseFromValueLeaky(
@@ -1395,6 +1403,25 @@ pub fn unsubscribe(self: *WebSocketHandler, sub_id: u128) BasicRequestErrors!RPC
     try std.json.stringify(request, .{}, buf_writter.writer());
 
     return self.sendRpcRequest(bool, buf_writter.getWritten());
+}
+/// Replaces the tracked V4 rates pool id set of the arc-node poolState
+/// namespace. Only these pools will have `getMultiRatesArc` data in
+/// subsequent `poolState` snapshots; an empty slice disables rates tracking.
+///
+/// RPC Method: [`poolState_addRatesPools`]
+pub fn addRatesPools(self: *WebSocketHandler, pool_ids: []const Hash) BasicRequestErrors!RPCResponse([]Hash) {
+    const request: EthereumRequest(struct { []const Hash }) = .{
+        .params = .{pool_ids},
+        .method = .poolState_addRatesPools,
+        .id = @intFromEnum(self.network_config.chain_id),
+    };
+
+    var request_buffer: [1024 * 8]u8 = undefined;
+    var buf_writter = std.io.fixedBufferStream(&request_buffer);
+
+    try std.json.stringify(request, .{}, buf_writter.writer());
+
+    return self.sendRpcRequest([]Hash, buf_writter.getWritten());
 }
 /// Emits new blocks that are added to the blockchain.
 ///
@@ -1808,7 +1835,7 @@ fn sendEthCallRequest(
 ) BasicRequestErrors!RPCResponse(T) {
     const tag: BalanceBlockTag = opts.tag orelse .latest;
 
-    var request_buffer: [200 * 1024]u8 = undefined;
+    var request_buffer: [2 * 1024 * 1024]u8 = undefined;
     var buf_writter = std.io.fixedBufferStream(&request_buffer);
 
     // const id: usize = @intCast(std.time.microTimestamp());
@@ -1878,7 +1905,7 @@ fn sendEthSimulateV1RequestMultiBlock(
         .blockStateCalls = sim_blocks.slice(),
     };
 
-    var request_buffer: [1 * 1024 * 1024]u8 = undefined;
+    var request_buffer: [2 * 1024 * 1024]u8 = undefined;
 
     var buf_writter = std.io.fixedBufferStream(&request_buffer);
 
@@ -1952,7 +1979,7 @@ fn sendEthSimulateV1Request(
         .blockStateCalls = &sim_blocks,
     };
 
-    var request_buffer: [500 * 1024]u8 = undefined;
+    var request_buffer: [1 * 1024 * 1024]u8 = undefined;
 
     var buf_writter = std.io.fixedBufferStream(&request_buffer);
 
@@ -1977,8 +2004,6 @@ fn sendEthSimulateV1Request(
     }
 
     const raw_json = buf_writter.getWritten();
-
-    // std.debug.print("\n=== RAW JSON OUT ===\n{s}\n====================\n\n", .{raw_json});
 
     return self.sendRpcRequest(T, raw_json);
 }

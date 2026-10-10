@@ -101,6 +101,7 @@ pub const EthereumRpcMethods = enum {
     txpool_contentFrom,
     txpool_inspect,
     txpool_status,
+    poolState_addRatesPools,
 };
 
 /// Enum of know chains.
@@ -238,7 +239,7 @@ pub fn EthereumSubscribeResponse(comptime T: type) type {
         method: []const u8,
         params: struct {
             result: T,
-            subscription: u128,
+            subscription: []const u8,
 
             pub fn jsonParse(allocator: Allocator, source: anytype, options: ParseOptions) ParseError(@TypeOf(source.*))!@This() {
                 return meta.json.jsonParse(@This(), allocator, source, options);
