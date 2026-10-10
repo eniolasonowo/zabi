@@ -458,7 +458,7 @@ pub const SimCallResult = struct {
     returnData: ?[]const u8,
     logs: ?[]const log.Log,
     gasUsed: ?[]const u8,
-    maxUsedGas: ?[]const u8,
+    maxUsedGas: ?[]const u8 = null,
     status: []const u8,
     @"error": ?SimulateError = null,
 };

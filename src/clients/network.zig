@@ -65,6 +65,10 @@ pub const NetworkConfig = struct {
     op_stack_contracts: ?OpMainNetContracts = null,
     /// The interval to retry the request. This will get multiplied in ns_per_ms.
     pooling_interval: u64 = 2_000,
+    /// Maximum time to wait for an RPC response before giving up on it.
+    /// `null` waits forever (previous behavior); a value bounds the wait so
+    /// silent/dead endpoints cannot block the calling thread indefinitely.
+    request_timeout_ns: ?u64 = null,
     /// Retry count for failed requests.
     retries: u8 = 5,
     /// Uri for the client to connect to

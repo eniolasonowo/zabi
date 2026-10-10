@@ -117,6 +117,21 @@ pub fn Stack(comptime T: type) type {
                 continue;
             };
         }
+        /// Pops an item off the stack, waiting at most `timeout_ns` for one
+        /// to become available. Returns `error.Timeout` if none arrives in
+        /// time. This is thread safe.
+        pub fn popTimeout(self: *Self, timeout_ns: u64) error{Timeout}!T {
+            self.mutex.lock();
+            defer {
+                self.mutex.unlock();
+                self.writeable.signal();
+            }
+
+            while (true) return self.popUnsafe() orelse {
+                self.readable.timedWait(&self.mutex, timeout_ns) catch return error.Timeout;
+                continue;
+            };
+        }
         /// Pops an item off the stack. Returns null if the stack is empty.
         /// This is thread safe,
         pub fn popOrNull(self: *Self) ?T {
@@ -339,4 +354,37 @@ pub fn BoundedStack(comptime size: usize) type {
             return self.inner.len - self.len;
         }
     };
+}
+
+test "Stack.popTimeout errors when empty" {
+    var stack = Stack(u32).init(std.testing.allocator, null);
+    defer stack.deinit();
+
+    try std.testing.expectError(error.Timeout, stack.popTimeout(1 * std.time.ns_per_ms));
+}
+
+test "Stack.popTimeout returns pushed item" {
+    var stack = Stack(u32).init(std.testing.allocator, null);
+    defer stack.deinit();
+
+    stack.push(42);
+
+    try std.testing.expectEqual(@as(u32, 42), try stack.popTimeout(1 * std.time.ns_per_ms));
+}
+
+test "Stack.popTimeout wakes up on push from another thread" {
+    var stack = Stack(u32).init(std.testing.allocator, null);
+    defer stack.deinit();
+
+    const delayed = struct {
+        fn pushDelayed(s: *Stack(u32)) void {
+            std.time.sleep(5 * std.time.ns_per_ms);
+            s.push(7);
+        }
+    };
+
+    const thread = try std.Thread.spawn(.{}, delayed.pushDelayed, .{&stack});
+    defer thread.join();
+
+    try std.testing.expectEqual(@as(u32, 7), try stack.popTimeout(2 * std.time.ns_per_s));
 }
